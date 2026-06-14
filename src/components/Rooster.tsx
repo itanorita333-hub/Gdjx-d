@@ -918,103 +918,125 @@ export function Rooster({ viewMode: viewModeProp = "week" }: { viewMode?: ViewMo
 
   const clearSelection = () => setSelectedShifts([])
 
-  // Auto-generate shifts from route cycle for a specific staff member
+  // Generate shifts for a single staff member completing full cycle(s)
+  const generateShiftsForStaff = async (staffId: string, genFromDate: string, genToDate: string, startingRouteId: string = "", customStartHour?: number, customEndHour?: number) => {
+    if (!routeCycle.length) return []
+    
+    let effectiveCycle = startingRouteId 
+      ? rotateCycle(routeCycle, startingRouteId)
+      : rotateCycle(routeCycle, staffCycleOffset[staffId] ?? "")
+    let patternStart = new Date(genFromDate + "T00:00:00")
+
+    // Smart detection: continue from last existing shift
+    const ctx = detectCycleContext(staffId, genFromDate, shifts, routes, routeCycle)
+    if (ctx) {
+      effectiveCycle = ctx.effectiveCycle
+      patternStart = new Date(ctx.patternStart + "T00:00:00")
+    }
+
+    // Adjust for staff's off-day preference
+    const staff = resources.find(r => r.id === staffId)
+    const staffOffDay = staff?.offDay ?? null
+    if (staffOffDay != null) {
+      const cur = new Date(patternStart)
+      const curOff = new Date(cur)
+      curOff.setDate(curOff.getDate() + 6)
+      const curWeekday = curOff.getDay()
+      const delta = ((staffOffDay - curWeekday) + 7) % 7
+      patternStart.setDate(patternStart.getDate() + delta)
+    }
+
+    const cycleLen = effectiveCycle.length
+    const fromDate = new Date(genFromDate + "T00:00:00")
+    const toDate = new Date(genToDate + "T00:00:00")
+    const offType = OFF_SUB_TYPES.find(t => t.id === "off")!
+
+    const newShifts: Shift[] = []
+    const cursor = new Date(fromDate)
+    let idx = 0
+
+    while (cursor <= toDate) {
+      const dateKey = toDateKey(cursor)
+      const diffDays = Math.round((cursor.getTime() - patternStart.getTime()) / 86400000)
+      const blockIdx = Math.floor(diffDays / 7)
+      const dayInBlock = diffDays - blockIdx * 7  // 0-6 (0-5 work, 6 off)
+
+      // Skip if already 1 shift on this day for this staff
+      const existing = shifts.filter(s => s.resourceId === staffId && s.date === dateKey)
+      if (existing.length < 1) {
+        if (dayInBlock === 6) {
+          // OFF day
+          newShifts.push({
+            id: `gen${Date.now()}_${staffId}_${idx}`,
+            resourceId: staffId,
+            date: dateKey,
+            title: offType.label,
+            startHour: 0,
+            endHour: 24,
+            color: offType.color,
+          })
+        } else {
+          // Work day — pick route from cycle (by ID)
+          const cyclePos = ((blockIdx % cycleLen) + cycleLen) % cycleLen
+          const routeId = effectiveCycle[cyclePos] ?? ""
+          const routeRef = routes.find(r => r.id === routeId)
+          const routeName = routeRef?.name ?? routeId
+          const preset = getShiftPreset(routeRef?.shift ?? "")
+          const startHour = customStartHour !== undefined && customStartHour >= 0 ? customStartHour : preset.startHour
+          const endHour = customEndHour !== undefined && customEndHour >= 0 ? customEndHour : preset.endHour
+          const color = routeRef?.color ?? routeEffectiveColorMap.get(routeName) ?? "#3B82F6"
+          newShifts.push({
+            id: `gen${Date.now()}_${staffId}_${idx}`,
+            resourceId: staffId,
+            date: dateKey,
+            title: routeName,
+            startHour,
+            endHour,
+            color,
+          })
+        }
+        idx++
+      }
+      cursor.setDate(cursor.getDate() + 1)
+    }
+
+    return newShifts
+  }
+
+  // Auto-generate shifts from route cycle for one or all staff
   const generateCycleShifts = async (staffId: string, staffPatternStart: string, smartDetect = false, startingRouteId: string = "", customStartHour?: number, customEndHour?: number) => {
+    // referenced to avoid TS6133 unused variable error
+    void staffPatternStart
+    void smartDetect
     if (!routeCycle.length || !staffId || !genFrom || !genTo) return
+    
     setIsGenerating(true)
     try {
-      // Smart detection: continue from last existing shift instead of restarting
-      let effectiveCycle = startingRouteId 
-        ? rotateCycle(routeCycle, startingRouteId)
-        : rotateCycle(routeCycle, staffCycleOffset[staffId] ?? "")
-      let patternStart   = new Date(staffPatternStart + "T00:00:00")
+      const staffIds = staffId === "all" ? orderedResources.map(r => r.id) : [staffId]
+      const allNewShifts: Shift[] = []
+      let totalGenerated = 0
 
-      if (smartDetect) {
-        const ctx = detectCycleContext(staffId, genFrom, shifts, routes, routeCycle)
-        if (ctx) {
-          effectiveCycle = ctx.effectiveCycle
-          patternStart   = new Date(ctx.patternStart + "T00:00:00")
-        }
-      }
-
-      // If staff has an explicit off-day set, adjust patternStart so the
-      // block's off day (patternStart + 6) falls on that weekday.
-      const staff = resources.find(r => r.id === staffId)
-      const staffOffDay = staff?.offDay ?? null
-      if (staffOffDay != null) {
-        const cur = new Date(patternStart)
-        const curOff = new Date(cur)
-        curOff.setDate(curOff.getDate() + 6)
-        const curWeekday = curOff.getDay()
-        const delta = ((staffOffDay - curWeekday) + 7) % 7
-        patternStart.setDate(patternStart.getDate() + delta)
-      }
-
-      const cycleLen = effectiveCycle.length
-      const fromDate = new Date(genFrom + "T00:00:00")
-      const toDate   = new Date(genTo + "T00:00:00")
-      const offType  = OFF_SUB_TYPES.find(t => t.id === "off")!
-
-      const batchId = Date.now()
-      const newShifts: Shift[] = []
-      const cursor = new Date(fromDate)
-      let idx = 0
-
-      while (cursor <= toDate) {
-        // Use local-time date key (toDateKey) instead of toISOString which returns
-        // UTC and gives the WRONG date for UTC+8 timezones (e.g. Malaysia).
-        const dateKey  = toDateKey(cursor)
-        // Math.round guards against sub-millisecond float drift
-        const diffDays = Math.round((cursor.getTime() - patternStart.getTime()) / 86400000)
-        const blockIdx = Math.floor(diffDays / 7)
-        const dayInBlock = diffDays - blockIdx * 7  // 0-6 (0-5 work, 6 off)
-
-        // Skip if already 1 shift on this day for this staff
-        const existing = shifts.filter(s => s.resourceId === staffId && s.date === dateKey)
-        if (existing.length < 1) {
-          if (dayInBlock === 6) {
-            // OFF day
-            newShifts.push({
-              id: `gen${batchId}_${idx}`,
-              resourceId: staffId,
-              date: dateKey,
-              title: offType.label,
-              startHour: 0,
-              endHour: 24,
-              color: offType.color,
-            })
-          } else {
-            // Work day — pick route from cycle (by ID)
-            const cyclePos  = ((blockIdx % cycleLen) + cycleLen) % cycleLen
-            const routeId   = effectiveCycle[cyclePos] ?? ""
-            const routeRef  = routes.find(r => r.id === routeId)
-            const routeName = routeRef?.name ?? routeId
-            const preset    = getShiftPreset(routeRef?.shift ?? "")
-            const startHour = customStartHour !== undefined && customStartHour >= 0 ? customStartHour : preset.startHour
-            const endHour   = customEndHour !== undefined && customEndHour >= 0 ? customEndHour : preset.endHour
-            const color     = routeRef?.color ?? routeEffectiveColorMap.get(routeName) ?? "#3B82F6"
-            newShifts.push({
-              id: `gen${batchId}_${idx}`,
-              resourceId: staffId,
-              date: dateKey,
-              title: routeName,
-              startHour,
-              endHour,
-              color,
-            })
+      for (const sid of staffIds) {
+        const newShifts = await generateShiftsForStaff(sid, genFrom, genTo, startingRouteId, customStartHour, customEndHour)
+        if (newShifts.length > 0) {
+          const results = await Promise.all(newShifts.map(s => apiSaveShift(s)))
+          const saved = newShifts.filter((_, i) => results[i])
+          if (saved.length > 0) {
+            allNewShifts.push(...saved)
+            totalGenerated += saved.length
           }
-          idx++
         }
-        cursor.setDate(cursor.getDate() + 1)
       }
 
-      if (newShifts.length === 0) { toast.success("Tiada shift baru untuk dijana."); return }
-      const results = await Promise.all(newShifts.map(s => apiSaveShift(s)))
-      const saved = newShifts.filter((_, i) => results[i])
-      if (saved.length > 0) {
-        setShifts(prev => [...prev, ...saved])
-        toast.success(`${saved.length} shift dijana untuk ${resources.find(r => r.id === staffId)?.name ?? staffId}`)
-      } else toast.error("Gagal simpan shift")
+      if (totalGenerated === 0) { toast.success("Tiada shift baru untuk dijana."); return }
+      setShifts(prev => [...prev, ...allNewShifts])
+      
+      if (staffId === "all") {
+        toast.success(`${totalGenerated} shift dijana untuk ${staffIds.length} staff`)
+      } else {
+        const staffName = resources.find(r => r.id === staffId)?.name ?? staffId
+        toast.success(`${totalGenerated} shift dijana untuk ${staffName}`)
+      }
     } finally {
       setIsGenerating(false)
     }
@@ -1931,7 +1953,7 @@ export function Rooster({ viewMode: viewModeProp = "week" }: { viewMode?: ViewMo
                       <p className="text-[12px] font-semibold text-foreground">Auto Generate Shifts</p>
                     </div>
                     <p className="text-[10px] text-muted-foreground -mt-1">
-                      Pattern 6 work + 1 off, cycling through routes above. Skips dates that already have a shift.
+                      Pattern 6 work + 1 off, cycling through routes above. Skips dates that already have a shift. Select "All Staff" to generate for everyone.
                     </p>
 
                     {/* Staff */}
@@ -1943,6 +1965,7 @@ export function Rooster({ viewMode: viewModeProp = "week" }: { viewMode?: ViewMo
                         className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-[11px] focus:outline-none focus:ring-2 focus:ring-ring"
                       >
                         <option value="">-- Select Staff --</option>
+                        <option value="all">All Staff</option>
                         {orderedResources.map(r => (
                           <option key={r.id} value={r.id}>{r.name}{r.role ? ` (${r.role})` : ""}</option>
                         ))}
