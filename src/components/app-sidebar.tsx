@@ -176,8 +176,8 @@ export function AppSidebar({
           style={{
             borderRadius: 16,
             background: isDark
-              ? "linear-gradient(160deg,rgba(16,20,28,0.98) 0%,rgba(10,14,20,0.99) 100%)"
-              : "linear-gradient(160deg,rgba(255,255,255,0.98) 0%,rgba(244,246,250,0.99) 100%)",
+              ? "linear-gradient(160deg,rgba(15,23,42,0.95) 0%,rgba(10,14,20,0.98) 100%)"
+              : "linear-gradient(160deg,rgba(248,250,252,0.95) 0%,rgba(255,255,255,0.98) 100%)",
           }}
         >
 
@@ -185,26 +185,35 @@ export function AppSidebar({
           <SidebarHeader className="p-0 shrink-0">
 
             {/* Cover image + brand */}
-            <div className="relative overflow-hidden" style={{ height: 112, borderRadius: "16px 16px 0 0" }}>
-              <img
-                src="/icon/IMG_0011.jpeg"
-                alt="" aria-hidden="true"
-                className="absolute inset-0 w-full h-full object-cover"
-                style={{ opacity: isDark ? 0.22 : 0.55 }}
-              />
-              <div
-                className="absolute inset-0"
-                style={{
-                  background: isDark
-                    ? "linear-gradient(180deg,rgba(10,14,20,0.3) 0%,rgba(10,14,20,0.88) 100%)"
-                    : "linear-gradient(180deg,rgba(255,255,255,0.1) 0%,rgba(244,246,250,0.82) 100%)",
+            <div
+              className="relative overflow-hidden"
+              style={{
+                height: 112,
+                borderRadius: "16px 16px 0 0",
+                background: isDark
+                    ? "linear-gradient(180deg,rgba(15,23,42,0.12) 0%,rgba(15,23,42,0.80) 100%)"
+                    : "linear-gradient(180deg,rgba(248,250,252,0.28) 0%,rgba(255,255,255,0.88) 100%)",
                 }}
-              />
+              >
+                <img
+                  src="/icon/IMG_0011.jpeg"
+                  alt="" aria-hidden="true"
+                  className="absolute inset-0 w-full h-full object-cover"
+                  style={{ opacity: isDark ? 0.32 : 0.62 }}
+                />
+                <div
+                  className="absolute inset-0"
+                  style={{
+                    background: isDark
+                      ? "linear-gradient(180deg,rgba(15,23,42,0.22) 0%,rgba(15,23,42,0.82) 100%)"
+                      : "linear-gradient(180deg,rgba(255,255,255,0.15) 0%,rgba(244,246,250,0.75) 100%)",
+                  }}
+                />
 
               {/* Logo + name — pinned to bottom, consistent with content px-4 */}
               <div className="absolute bottom-0 left-0 right-0 px-4 pb-3 flex items-center gap-2.5">
                 <img src="/FamilyMart.png" alt="FM" className="w-8 h-8 object-contain shrink-0" />
-                  <div className="min-w-0">
+                <div className="min-w-0">
                   <p className={`text-[11px] font-bold leading-snug truncate ${isDark ? "text-white" : "text-gray-900"}`}>
                     Vending Machine
                   </p>
@@ -303,9 +312,7 @@ export function AppSidebar({
           </SidebarContent>
 
           {/* ── Footer ───────────────────────────────────────────── */}
-          <SidebarFooter className="px-3 pt-0 pb-3 shrink-0">
-            <div className={`h-px ${divider} mb-3`} />
-
+          <SidebarFooter className="px-3 pt-0 pb-2 shrink-0">
             {/* Quick actions */}
             <div className="relative" ref={actionRef}>
 
@@ -353,7 +360,7 @@ export function AppSidebar({
                     {isDark ? "Dark Mode" : "Light Mode"}
                   </span>
                   <span onClick={e => e.stopPropagation()}>
-                    <Switch size="sm" checked={isDark} onCheckedChange={toggleMode} />
+                    <Switch size="sm" className="fcal-switch-sidebar" checked={isDark} onCheckedChange={toggleMode} />
                   </span>
                 </button>
 
@@ -372,7 +379,7 @@ export function AppSidebar({
                   </span>
                   {!isEditModeTransitioning && (
                     <span onClick={e => e.stopPropagation()}>
-                      <Switch size="sm" checked={isEditMode} onCheckedChange={handleEditModeToggle} />
+                      <Switch size="sm" className="fcal-switch-sidebar" checked={isEditMode} onCheckedChange={handleEditModeToggle} />
                     </span>
                   )}
                 </button>
@@ -399,8 +406,9 @@ export function AppSidebar({
               </button>
             </div>
 
+            <div className={`h-px ${divider} mb-2`} />
             {/* Version */}
-            <p className={`mt-2 text-center text-[9px] tracking-wide ${isDark ? "text-white/40" : "text-black/40"}`}>
+            <p className={`mt-0.5 mx-auto text-center text-[9px] tracking-wide ${isDark ? "text-white/40" : "text-black/40"}`}>
               Dbrutals · v1.0.0
             </p>
           </SidebarFooter>
